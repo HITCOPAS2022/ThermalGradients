@@ -3,6 +3,10 @@ library(rerddapXtracto)
 library(raster)
 library(lubridate)
 library(grec)
+library(rtsVis)
+library("tidyverse")
+library("gganimate")
+library("gifski")
 #Set spatial extent for extracting data
 ext=extent(-79,-68,-47,-39)
 #Use depth data to crete a mask
@@ -45,5 +49,58 @@ mask=setExtent(mask,ext)
 plot(Grastersst[[1]]*mask)
 gradbrick=brick(unlist(Grastersst))
 gradbrick=gradbrick*mask
-#Animate data
+names(gradbrick)=idsst
+#Animate data in a single step
 animate(gradbrick, n=1,main=idsst)
+#Animate data in a cooler way
+# convert gridded raster data dataframe
+g_df <- gradbrick %>%
+  rasterToPoints %>%
+  as.data.frame() %>%
+  `colnames<-`(c("x", "y", names(gradbrick))) %>%
+  pivot_longer(cols = starts_with("X20"),
+               names_to = "layer",
+               values_to = "val")%>%
+  mutate(layer = substr(layer, 2, 14)) %>%
+  mutate(date = as.POSIXct(layer, "%Y.%m.%d", tz = "UTC")
+  )
+
+world_map <- ggplot() +
+  theme_void() +
+  geom_tile(
+    data = g_df,
+    aes(
+      x = x,
+      y = y,
+      fill = val,
+      group = date)) +
+  scale_fill_viridis_c(
+    option = "B"
+  ) +labs(x = "Longitude", y = "Latitude") +
+  theme(
+    plot.title = element_text(
+      family = "Prata",
+      size = 20,
+      hjust = 0.5),
+    plot.subtitle = element_text(
+      hjust = 0.5,
+      size = 20),
+    plot.caption = element_text(
+      color = "grey50",
+      size = 14,
+      hjust = 0.9),
+    legend.position = "top",
+    legend.title = element_blank()
+  ) +
+  labs(
+    title = "Thermal gradients °C",
+    subtitle = "Northern Chilean Patagonia",
+    caption = "SST Data source: ERDDAP at {current_frame}")+
+  transition_manual(date)
+
+gganimate::animate(
+  world_map,
+  width = 400,
+  height = 600,
+  renderer=gifski_renderer("map.gif")
+)
